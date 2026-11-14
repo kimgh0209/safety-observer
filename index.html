@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d4ed8">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>ASSA+ 안전관찰 도우미</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--text:#1a1f2b;--sub:#667085;--line:#d9dee7;--pri:#1d4ed8;--good:#0f766e;--bad:#b91c1c;--warn:#b45309}
+@media (prefers-color-scheme:dark){:root{--bg:#0f131a;--card:#1a202b;--text:#eef1f6;--sub:#98a2b3;--line:#2c3544;--pri:#6b9bff;--good:#4fd1c5;--bad:#ff8a8a;--warn:#f6ad55}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,"Malgun Gothic",sans-serif;padding:0 16px calc(32px + env(safe-area-inset-bottom))}
+header{display:flex;justify-content:space-between;align-items:center;padding:16px 0 8px}
+h1{font-size:20px;margin:0}
+h2{font-size:15px;margin:0 0 8px;color:var(--sub)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+label{display:block;font-size:14px;color:var(--sub);margin:10px 0 4px}
+input,select,textarea{width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
+textarea{min-height:90px;resize:vertical}
+button{font:inherit;border:0;border-radius:10px;padding:12px 14px;cursor:pointer}
+.btn{background:var(--pri);color:#fff;width:100%;font-weight:600}
+.btn.sec{background:var(--bg);color:var(--text);border:1px solid var(--line)}
+.btn:disabled{opacity:.5}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.thumbs div{position:relative}
+.thumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}
+.thumbs b{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.65);color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:14px}
+.field{border-top:1px solid var(--line);padding:10px 0}
+.field:first-child{border-top:0}
+.field .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.field .hd span{font-weight:700;font-size:14px}
+.copy{padding:4px 10px;font-size:13px;background:var(--bg);color:var(--pri);border:1px solid var(--line)}
+.out{width:100%;min-height:70px}
+.tag-good{color:var(--good)}.tag-bad{color:var(--bad)}
+.note{font-size:13px;color:var(--sub)}
+.err{color:var(--bad);white-space:pre-wrap}
+details summary{cursor:pointer;font-weight:600}
+.spin{display:none;text-align:center;color:var(--sub);padding:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>ASSA+ 안전관찰 도우미</h1>
+  <button class="btn sec" id="cfgBtn" style="width:auto;padding:8px 12px">설정</button>
+</header>
+
+<div class="card" id="cfg" hidden>
+  <h2>설정 (이 기기에만 저장)</h2>
+  <label>Anthropic API 키</label>
+  <input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off">
+  <label>모델</label>
+  <input id="model" placeholder="claude-sonnet-5-5">
+  <label>문체</label>
+  <select id="style">
+    <option value="개조식(~함, ~됨, ~필요)">개조식 (~함, ~됨)</option>
+    <option value="서술식(~합니다)">서술식 (~합니다)</option>
+  </select>
+  <p class="note">API 키는 이 휴대폰 브라우저에만 저장되며 GitHub에 올라가지 않습니다. 사진은 Anthropic API로 전송됩니다. 사내 보안 정책(촬영·외부 전송 가능 구역)을 확인하고 사용하세요.</p>
+  <button class="btn" id="saveCfg">저장</button>
+</div>
+
+<div class="card">
+  <h2>1. 현장 사진</h2>
+  <div class="row">
+    <button class="btn" id="camBtn">📷 촬영</button>
+    <button class="btn sec" id="galBtn">앨범</button>
+  </div>
+  <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+  <input type="file" id="gal" accept="image/*" multiple hidden>
+  <div class="thumbs" id="thumbs"></div>
+
+  <label>작업/장소 설명 (선택)</label>
+  <textarea id="ctx" placeholder="예: 이천사업소 보일러동 2층 배관 보온 작업, 협력회사 3명"></textarea>
+
+  <div class="row">
+    <div><label>관찰대상</label>
+      <select id="target"><option value="">자동/미정</option><option>협력회사</option><option>구성원</option><option>협력회사+구성원</option></select></div>
+    <div><label>총 인원(명)</label><input id="headcount" type="number" inputmode="numeric" placeholder="자동"></div>
+  </div>
+  <div style="height:12px"></div>
+  <button class="btn" id="go" disabled>분석하기</button>
+  <div class="spin" id="spin">분석 중... 사진 수에 따라 10~30초 걸립니다</div>
+  <p class="err" id="err"></p>
+</div>
+
+<div class="card" id="result" hidden>
+  <h2>2. 결과 (복사해서 ASSA+ 양식에 붙여넣기)</h2>
+  <div id="fields"></div>
+  <p class="note">AI는 사진에 보이는 것만 판단합니다. 작업허가, 점검 이력, 전원차단 등은 반영되지 않으니 현장에서 직접 확인한 내용으로 보완하세요.</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const store={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+let images=[]; // {dataUrl, b64}
+
+$('apiKey').value=store.get('apiKey')||'';
+$('model').value=store.get('model')||'claude-sonnet-5-5';
+$('style').value=store.get('style')||$('style').options[0].value;
+if(!store.get('apiKey')) $('cfg').hidden=false;
+
+$('cfgBtn').onclick=()=>$('cfg').hidden=!$('cfg').hidden;
+$('saveCfg').onclick=()=>{
+  store.set('apiKey',$('apiKey').value.trim());
+  store.set('model',$('model').value.trim()||'claude-sonnet-5-5');
+  store.set('style',$('style').value);
+  $('cfg').hidden=true;
+};
+$('camBtn').onclick=()=>$('cam').click();
+$('galBtn').onclick=()=>$('gal').click();
+$('cam').onchange=e=>addFiles(e.target.files);
+$('gal').onchange=e=>addFiles(e.target.files);
+
+function resize(file,max=1568){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file), img=new Image();
+    img.onload=()=>{
+      const r=Math.min(1,max/Math.max(img.width,img.height));
+      const c=document.createElement('canvas');
+      c.width=Math.round(img.width*r); c.height=Math.round(img.height*r);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      const dataUrl=c.toDataURL('image/jpeg',.85);
+      URL.revokeObjectURL(url);
+      res({dataUrl,b64:dataUrl.split(',')[1]});
+    };
+    img.onerror=()=>rej(new Error('이미지를 읽을 수 없습니다'));
+    img.src=url;
+  });
+}
+async function addFiles(files){
+  for(const f of files){
+    if(images.length>=6){alert('사진은 최대 6장까지입니다');break}
+    try{images.push(await resize(f))}catch(e){$('err').textContent=e.message}
+  }
+  $('cam').value='';$('gal').value='';
+  renderThumbs();
+}
+function renderThumbs(){
+  $('thumbs').innerHTML='';
+  images.forEach((im,i)=>{
+    const d=document.createElement('div');
+    d.innerHTML=`<img src="${im.dataUrl}"><b>×</b>`;
+    d.querySelector('b').onclick=()=>{images.splice(i,1);renderThumbs()};
+    $('thumbs').appendChild(d);
+  });
+  $('go').disabled=!images.length;
+}
+
+const SYSTEM=`당신은 발전소·산업·공사 현장의 안전관찰(ASSA+) 기록을 돕는 안전 전문가입니다.
+사진에서 실제로 보이는 사실만 근거로 판단하세요. 보이지 않는 것(허가서, 점검 이력, 전원차단 여부 등)은 추측하지 말고, 필요하면 '현장 확인 필요'로 표기하세요.
+위험요소는 구체적 위치/대상과 함께 (추락, 낙하, 협착, 감전, 화재·폭발, 넘어짐, 보호구 미착용, 통로 미확보, 개구부, 정리정돈 등) 유형을 밝히고,
+잘된 점은 실제로 확인되는 안전한 행동·상태만 적으세요. 억지로 채우지 마세요.
+출력은 반드시 아래 JSON 하나만, 코드블록 없이 출력합니다:
+{"관찰사항":"작업 내용과 상황을 객관적으로 서술(2~4문장)",
+"잘된점":["..."],
+"위험요소":["[유형] 구체적 내용 및 위험성"],
+"안전불안전상태":"잘된 점과 위험요소를 종합한 서술. '안전: ... / 불안전: ...' 형식",
+"제안건의":["구체적 개선 조치"],
+"추정인원":숫자 또는 null,
+"유형추천":"예: 작업관찰, 설비/환경 관찰 등 가장 알맞은 한 가지(확실치 않으면 빈 문자열)"}`;
+
+$('go').onclick=async()=>{
+  const key=store.get('apiKey');
+  if(!key){$('cfg').hidden=false;$('err').textContent='먼저 설정에서 API 키를 입력하세요.';return}
+  $('err').textContent='';$('go').disabled=true;$('spin').style.display='block';$('result').hidden=true;
+  const content=images.map(im=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:im.b64}}));
+  const extra=[
+    $('ctx').value.trim()&&`현장 설명: ${$('ctx').value.trim()}`,
+    $('target').value&&`관찰대상: ${$('target').value}`,
+    $('headcount').value&&`총 인원: ${$('headcount').value}명`,
+    `문체: ${store.get('style')||'개조식(~함, ~됨, ~필요)'}`
+  ].filter(Boolean).join('\n');
+  content.push({type:'text',text:`위 사진(${images.length}장)을 분석해 ASSA+ 안전관찰 기록을 JSON으로 작성하세요.\n${extra}`});
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:store.get('model')||'claude-sonnet-5-5',max_tokens:2000,system:SYSTEM,messages:[{role:'user',content}]})
+    });
+    const j=await r.json();
+    if(!r.ok) throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+    const text=j.content.map(c=>c.text||'').join('');
+    const m=text.match(/\{[\s\S]*\}/);
+    if(!m) throw new Error('결과 형식을 읽지 못했습니다:\n'+text);
+    render(JSON.parse(m[0]));
+  }catch(e){$('err').textContent='오류: '+e.message}
+  finally{$('go').disabled=!images.length;$('spin').style.display='none'}
+};
+
+const bullets=a=>(Array.isArray(a)?a:[a]).filter(Boolean).map(s=>'- '+s).join('\n');
+function render(d){
+  const head=$('headcount').value||d['추정인원'];
+  const items=[
+    ['관찰사항',d['관찰사항']||''],
+    ['안전/불안전 상태',d['안전불안전상태']||''],
+    ['제안/건의사항',bullets(d['제안건의'])],
+    ['(참고) 잘된 점',bullets(d['잘된점'])],
+    ['(참고) 위험요소',bullets(d['위험요소'])],
+  ];
+  const meta=[];
+  if(head!=null&&head!=='') meta.push('총 인원(추정): '+head+'명');
+  if(d['유형추천']) meta.push('유형 추천: '+d['유형추천']);
+  const box=$('fields');box.innerHTML='';
+  if(meta.length){const p=document.createElement('p');p.className='note';p.textContent=meta.join('  |  ');box.appendChild(p)}
+  items.forEach(([name,val])=>{
+    const f=document.createElement('div');f.className='field';
+    f.innerHTML=`<div class="hd"><span></span><button class="copy">복사</button></div><textarea class="out"></textarea>`;
+    f.querySelector('span').textContent=name;
+    const ta=f.querySelector('textarea');ta.value=val;
+    ta.style.height='auto';setTimeout(()=>ta.style.height=Math.max(70,ta.scrollHeight+4)+'px',0);
+    f.querySelector('.copy').onclick=async e=>{
+      try{await navigator.clipboard.writeText(ta.value)}catch(_){ta.select();document.execCommand('copy')}
+      e.target.textContent='복사됨';setTimeout(()=>e.target.textContent='복사',1200);
+    };
+    box.appendChild(f);
+  });
+  $('result').hidden=false;
+  $('result').scrollIntoView({behavior:'smooth'});
+}
+</script>
+</body>
+</html>
